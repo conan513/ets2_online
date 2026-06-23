@@ -1,0 +1,16 @@
+[Unit]
+Description=SCS Server Manager Web Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=steam
+Group=steam
+WorkingDirectory=/home/steam/webpanel
+Environment="PORT=8081"
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,355 @@
+#!/usr/bin/env bash
+
+# truck-server: SCS Dedicated Server Management Utility
+# Designed for Arch Linux
+
+set -euo pipefail
+
+# Colors for modern terminal UI
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Configurations
+STEAM_USER="steam"
+ETS2_SERVICE="ets2server.service"
+ATS_SERVICE="atsserver.service"
+
+STEAMCMD_PATH="/home/steam/steamcmd/steamcmd.sh"
+ETS2_DIR="/home/steam/ets2-server"
+ATS_DIR="/home/steam/ats-server"
+
+ETS2_DATA="/home/steam/ets2-data/Euro Truck Simulator 2"
+ATS_DATA="/home/steam/ats-data/American Truck Simulator"
+
+# Helper print functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+# Print help menu
+show_help() {
+    echo -e "${BOLD}${CYAN}SCS Dedicated Server Manager (ETS2 & ATS)${NC}"
+    echo -e "Usage: ${BOLD}truck-server <command> [arguments]${NC}\n"
+    echo -e "${BOLD}Commands:${NC}"
+    echo -e "  ${GREEN}start${NC} [ets2|ats|all]       Start the server(s)"
+    echo -e "  ${GREEN}stop${NC} [ets2|ats|all]        Stop the server(s)"
+    echo -e "  ${GREEN}restart${NC} [ets2|ats|all]     Restart the server(s)"
+    echo -e "  ${GREEN}status${NC} [ets2|ats]          Check server systemd status"
+    echo -e "  ${GREEN}logs${NC} [ets2|ats]            View server logs in real-time"
+    echo -e "  ${GREEN}update${NC} [ets2|ats|all]      Update server files via SteamCMD"
+    echo -e "  ${GREEN}edit-config${NC} [ets2|ats]     Open server_config.sii in your editor"
+    echo -e "  ${GREEN}import${NC} [ets2|ats] <path>   Import server_packages.dat & server_packages.sii"
+    echo -e "  ${GREEN}help${NC}                       Show this help message"
+    echo ""
+    echo -e "Examples:"
+    echo -e "  truck-server start ets2"
+    echo -e "  truck-server logs ats"
+    echo -e "  truck-server import ets2 /path/to/exported/files/"
+}
+
+# Check if a command is run as root or has sudo
+ensure_root_or_sudo() {
+    if [ "$EUID" -ne 0 ]; then
+        log_info "Kérlek add meg a jelszavad a rendszergazdai művelethez (sudo):"
+        exec sudo "$0" "$@"
+    fi
+}
+
+# Resolve game to systemd service name and directories
+resolve_game() {
+    local game=$1
+    case "$game" in
+        ets2)
+            SERVICE=$ETS2_SERVICE
+            GAME_NAME="Euro Truck Simulator 2"
+            DATA_DIR=$ETS2_DATA
+            APP_ID="1948160"
+            INSTALL_DIR=$ETS2_DIR
+            ;;
+        ats)
+            SERVICE=$ATS_SERVICE
+            GAME_NAME="American Truck Simulator"
+            DATA_DIR=$ATS_DATA
+            APP_ID="2239530"
+            INSTALL_DIR=$ATS_DIR
+            ;;
+        *)
+            log_error "Érvénytelen játék választás: '$game'. Használj: 'ets2' vagy 'ats'."
+            exit 1
+            ;;
+    esac
+}
+
+# Manage services (start/stop/restart)
+manage_service() {
+    local action=$1
+    local game=$2
+    
+    if [ "$game" == "all" ]; then
+        ensure_root_or_sudo "$action" "$game"
+        log_info "${action^}ing both servers..."
+        systemctl "$action" "$ETS2_SERVICE" "$ATS_SERVICE"
+        log_success "Mindkét szerver sikeresen: ${action}ed!"
+    else
+        resolve_game "$game"
+        ensure_root_or_sudo "$action" "$game"
+        log_info "${action^}ing $GAME_NAME server..."
+        systemctl "$action" "$SERVICE"
+        log_success "$GAME_NAME szerver sikeresen: ${action}ed!"
+    fi
+}
+
+# Server status
+check_status() {
+    local game=$1
+    resolve_game "$game"
+    
+    echo -e "${BOLD}${CYAN}--- $GAME_NAME Status ---${NC}"
+    systemctl status "$SERVICE" --no-pager || true
+}
+
+# View logs
+view_logs() {
+    local game=$1
+    resolve_game "$game"
+    
+    log_info "Megnyitás: $GAME_NAME logs (Kilépéshez nyomj Ctrl+C-t)..."
+    journalctl -u "$SERVICE" -n 50 -f
+}
+
+# Run SteamCMD update
+run_update() {
+    local game=$1
+    ensure_root_or_sudo "update" "$game"
+    
+    if [ ! -f "$STEAMCMD_PATH" ]; then
+        log_error "SteamCMD nem található a következő helyen: $STEAMCMD_PATH"
+        exit 1
+    fi
+    
+    update_game() {
+        local g=$1
+        resolve_game "$g"
+        log_info "Frissítés indítása: $GAME_NAME ($INSTALL_DIR)..."
+        
+        # Ensure directories exist and have correct permissions
+        mkdir -p "$INSTALL_DIR"
+        chown -R "$STEAM_USER:$STEAM_USER" "$INSTALL_DIR"
+        
+        # Run steamcmd as steam user
+        sudo -u "$STEAM_USER" "$STEAMCMD_PATH" \
+            +force_install_dir "$INSTALL_DIR" \
+            +login anonymous \
+            +app_update "$APP_ID" validate \
+            +quit
+            
+        log_success "$GAME_NAME sikeresen frissítve!"
+    }
+
+    if [ "$game" == "all" ]; then
+        update_game "ets2"
+        update_game "ats"
+    else
+        update_game "$game"
+    fi
+}
+
+# Edit configuration file
+edit_config() {
+    local game=$1
+    resolve_game "$game"
+    
+    local config_file="$DATA_DIR/server_config.sii"
+    
+    if [ ! -f "$config_file" ]; then
+        log_warn "A konfigurációs fájl nem található: $config_file"
+        log_info "Létrehozunk egy alapértelmezett konfigurációs mappát..."
+        ensure_root_or_sudo "edit-config" "$game"
+        mkdir -p "$DATA_DIR"
+        chown -R "$STEAM_USER:$STEAM_USER" "$(dirname "$DATA_DIR")"
+        
+        # Run server briefly as steam user to generate configuration if possible
+        log_info "Megpróbáljuk elindítani a szervert az alapértelmezett fájl legenerálásához..."
+        
+        local server_bin=""
+        if [ "$game" == "ets2" ]; then
+            server_bin="$ETS2_DIR/bin/linux_x64/eurotrucks2_server"
+        else
+            server_bin="$ATS_DIR/bin/linux_x64/amtrucks_server"
+        fi
+        
+        if [ -f "$server_bin" ]; then
+            # Run in background and kill after 3 seconds
+            sudo -u "$STEAM_USER" LD_LIBRARY_PATH="/home/steam/steamcmd/linux64" "$server_bin" -homedir "$(dirname "$DATA_DIR")" > /dev/null 2>&1 &
+            local pid=$!
+            sleep 3
+            kill $pid || true
+        else
+            log_error "Nem található a szerver bináris: $server_bin. Először futtasd: 'truck-server update $game'"
+            exit 1
+        fi
+    fi
+    
+    if [ ! -f "$config_file" ]; then
+        log_error "Nem sikerült automatikusan legenerálni a fájlt: $config_file"
+        log_info "Kérlek futtasd a szervert legalább egyszer, vagy másolj be egy saját configot."
+        exit 1
+    fi
+    
+    # Run text editor as steam user to edit the file
+    local editor=${EDITOR:-nano}
+    log_info "Megnyitás a következő szerkesztővel: $editor..."
+    ensure_root_or_sudo "edit-config" "$game"
+    sudo -u "$STEAM_USER" -E $editor "$config_file"
+}
+
+# Import server packages (server_packages.dat / server_packages.sii)
+import_packages() {
+    local game=$1
+    local source_path=${2:-}
+    
+    if [ -z "$source_path" ]; then
+        log_error "Kérlek add meg a forrás elérési utat (fájl vagy mappa)!"
+        echo "Használat: truck-server import $game <path_to_files_or_zip>"
+        exit 1
+    fi
+    
+    resolve_game "$game"
+    ensure_root_or_sudo "import" "$game" "$source_path"
+    
+    # Create destination data directory if not exists
+    mkdir -p "$DATA_DIR"
+    
+    # Check if source_path is a directory
+    if [ -d "$source_path" ]; then
+        log_info "Másolás a könyvtárból: $source_path ide: $DATA_DIR"
+        
+        # Check for files
+        local found=0
+        if [ -f "$source_path/server_packages.dat" ]; then
+            cp -v "$source_path/server_packages.dat" "$DATA_DIR/"
+            found=1
+        fi
+        if [ -f "$source_path/server_packages.sii" ]; then
+            cp -v "$source_path/server_packages.sii" "$DATA_DIR/"
+            found=1
+        fi
+        
+        if [ $found -eq 0 ]; then
+            log_error "Nem található 'server_packages.dat' vagy 'server_packages.sii' a megadott mappában!"
+            exit 1
+        fi
+        
+    # Check if source_path is a zip archive
+    elif [ -f "$source_path" ] && [[ "$source_path" == *.zip ]]; then
+        log_info "Kicsomagolás a zip-ből: $source_path..."
+        if ! command -v unzip &> /dev/null; then
+            log_info "Unzip telepítése..."
+            pacman -S --needed --noconfirm unzip
+        fi
+        
+        # Extract files directly to DATA_DIR
+        unzip -j -o "$source_path" "server_packages.dat" "server_packages.sii" -d "$DATA_DIR" || {
+            log_error "Nem sikerült kicsomagolni a fájlokat. Biztosan benne vannak a zip-ben?"
+            exit 1
+        }
+    # Check if it's a direct file
+    elif [ -f "$source_path" ]; then
+        local filename=$(basename "$source_path")
+        if [ "$filename" == "server_packages.dat" ] || [ "$filename" == "server_packages.sii" ]; then
+            cp -v "$source_path" "$DATA_DIR/"
+        else
+            log_error "Érvénytelen fájl: $filename. Csak 'server_packages.dat', 'server_packages.sii' vagy egy .zip archívum importálható."
+            exit 1
+        fi
+    else
+        log_error "A forrás elérési út nem létezik: $source_path"
+        exit 1
+    fi
+    
+    # Fix permissions
+    chown -R "$STEAM_USER:$STEAM_USER" "$(dirname "$DATA_DIR")"
+    log_success "Szerver csomagok sikeresen importálva ide: $DATA_DIR!"
+}
+
+# Main Command Router
+if [ $# -lt 1 ]; then
+    show_help
+    exit 0
+fi
+
+CMD=$1
+shift
+
+case "$CMD" in
+    start|stop|restart)
+        if [ $# -lt 1 ]; then
+            log_error "Kérlek add meg a játékot: 'ets2', 'ats' vagy 'all'"
+            exit 1
+        fi
+        manage_service "$CMD" "$1"
+        ;;
+    status)
+        if [ $# -lt 1 ]; then
+            log_error "Kérlek add meg a játékot: 'ets2' vagy 'ats'"
+            exit 1
+        fi
+        check_status "$1"
+        ;;
+    logs)
+        if [ $# -lt 1 ]; then
+            log_error "Kérlek add meg a játékot: 'ets2' vagy 'ats'"
+            exit 1
+        fi
+        view_logs "$1"
+        ;;
+    update)
+        if [ $# -lt 1 ]; then
+            log_error "Kérlek add meg a játékot: 'ets2', 'ats' vagy 'all'"
+            exit 1
+        fi
+        run_update "$1"
+        ;;
+    edit-config)
+        if [ $# -lt 1 ]; then
+            log_error "Kérlek add meg a játékot: 'ets2' vagy 'ats'"
+            exit 1
+        fi
+        edit_config "$1"
+        ;;
+    import)
+        if [ $# -lt 1 ]; then
+            log_error "Kérlek add meg a játékot: 'ets2' vagy 'ats'"
+            exit 1
+        fi
+        game=$1
+        shift
+        import_packages "$game" "$@"
+        ;;
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        log_error "Ismeretlen parancs: '$CMD'"
+        show_help
+        exit 1
+        ;;
+esac

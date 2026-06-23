@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCS Truck Server Manager</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="glass-bg"></div>
+    <div class="glow-container">
+        <div class="glow-sphere cyan"></div>
+        <div class="glow-sphere magenta"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- Main Header -->
+        <header class="app-header">
+            <div class="logo">
+                <i class="fa-solid fa-truck-fast logo-icon"></i>
+                <div class="logo-text">
+                    <h1>SCS Dedicated Server</h1>
+                    <span>Vezérlőpult & Mod Kezelő</span>
+                </div>
+            </div>
+            <!-- System Status Meter -->
+            <div class="system-stats">
+                <div class="stat-card">
+                    <div class="stat-info">
+                        <span class="stat-label"><i class="fa-solid fa-microchip"></i> CPU load</span>
+                        <span class="stat-value" id="cpu-val">0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar cyan-glow" id="cpu-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-info">
+                        <span class="stat-label"><i class="fa-solid fa-memory"></i> RAM usage</span>
+                        <span class="stat-value" id="ram-val">0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar magenta-glow" id="ram-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="workspace">
+            <!-- Navigation Sidebar (Game Tabs) -->
+            <nav class="sidebar">
+                <button class="nav-tab active" data-game="ets2">
+                    <i class="fa-solid fa-globe"></i>
+                    <span>Euro Truck Simulator 2</span>
+                </button>
+                <button class="nav-tab" data-game="ats">
+                    <i class="fa-solid fa-flag-usa"></i>
+                    <span>American Truck Simulator</span>
+                </button>
+            </nav>
+
+            <!-- Dashboard Content -->
+            <section class="content-area">
+                <!-- Server Control Panel Card -->
+                <div class="card control-card">
+                    <div class="card-header">
+                        <h2>Szerver Vezérlés & Állapot</h2>
+                        <div class="status-badge" id="server-status">
+                            <span class="indicator"></span>
+                            <span class="status-text">Betöltés...</span>
+                        </div>
+                    </div>
+                    <div class="control-actions">
+                        <button class="btn btn-success" id="btn-start" onclick="controlServer('start')">
+                            <i class="fa-solid fa-play"></i> Indítás
+                        </button>
+                        <button class="btn btn-danger" id="btn-stop" onclick="controlServer('stop')">
+                            <i class="fa-solid fa-stop"></i> Leállítás
+                        </button>
+                        <button class="btn btn-warning" id="btn-restart" onclick="controlServer('restart')">
+                            <i class="fa-solid fa-rotate-right"></i> Újraindítás
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Split Grid for Mod Manager and Config Editor -->
+                <div class="grid-split">
+                    <!-- Mod Manager & Uploader Card -->
+                    <div class="card mods-card">
+                        <div class="card-header">
+                            <h2>Modok & Szerver Csomagok</h2>
+                        </div>
+                        <div class="card-body">
+                            <div class="server-files-status">
+                                <div class="file-indicator" id="file-dat-status">
+                                    <i class="fa-solid fa-circle-check success-icon"></i>
+                                    <span>server_packages.dat</span>
+                                </div>
+                                <div class="file-indicator" id="file-sii-status">
+                                    <i class="fa-solid fa-circle-check success-icon"></i>
+                                    <span>server_packages.sii</span>
+                                </div>
+                            </div>
+                            
+                            <div class="upload-zone" id="drop-zone">
+                                <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                                <p>Húzd ide a fájlokat vagy kattints a feltöltéshez</p>
+                                <span>Támogatott: .dat, .sii vagy .zip csomag</span>
+                                <input type="file" id="file-input" multiple style="display: none;">
+                            </div>
+                            <div class="upload-progress-container" id="upload-progress-container" style="display: none;">
+                                <div class="upload-progress-bar" id="upload-progress-bar" style="width: 0%;"></div>
+                                <span id="upload-status-text">Feltöltés: 0%</span>
+                            </div>
+                            <div id="upload-result" class="alert-info" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Config Editor Card -->
+                    <div class="card config-card">
+                        <div class="card-header">
+                            <h2>Konfiguráció Menedzser</h2>
+                            <div class="config-tabs">
+                                <button class="config-tab-btn active" data-mode="form">Űrlap Szerkesztő</button>
+                                <button class="config-tab-btn" data-mode="raw">Haladó SII</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- Config Form Editor -->
+                            <form id="config-form" class="config-pane active">
+                                <div class="form-group">
+                                    <label for="cfg-lobby_name">Lobby neve (Szervernév)</label>
+                                    <input type="text" id="cfg-lobby_name" name="lobby_name" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="cfg-description">Leírás</label>
+                                    <input type="text" id="cfg-description" name="description">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="cfg-password">Csatlakozási jelszó</label>
+                                        <input type="password" id="cfg-password" name="password" placeholder="Üres a publikushoz">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="cfg-max_players">Max játékosok</label>
+                                        <input type="number" id="cfg-max_players" name="max_players" min="2" max="128" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="cfg-server_logon_token">Steam GSLT Token</label>
+                                    <input type="text" id="cfg-server_logon_token" name="server_logon_token" placeholder="Ide másold a generált tokent">
+                                    <small class="helper-text">Generálj tokent a játék App ID-jával (ETS2: 227300, ATS: 270880) a Steam-en.</small>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Mentés</button>
+                                </div>
+                            </form>
+
+                            <!-- Raw Config Editor -->
+                            <div id="raw-config-pane" class="config-pane">
+                                <textarea id="raw-config-area" spellcheck="false"></textarea>
+                                <div class="form-actions" style="margin-top: 15px;">
+                                    <button class="btn btn-primary" onclick="saveRawConfig()"><i class="fa-solid fa-floppy-disk"></i> Mentés (Raw)</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Console logs card -->
+                <div class="card console-card">
+                    <div class="card-header">
+                        <h2>Szerver Konzol Napló (Logs)</h2>
+                        <button class="btn btn-secondary" onclick="fetchLogs()"><i class="fa-solid fa-arrows-rotate"></i> Frissítés</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="console-output" id="console-output">
+                            Csatlakozás a szerver logokhoz...
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

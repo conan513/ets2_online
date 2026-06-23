@@ -1,0 +1,16 @@
+[Unit]
+Description=American Truck Simulator Dedicated Server
+After=network.target
+
+[Service]
+Type=simple
+User=steam
+Group=steam
+WorkingDirectory=/home/steam/ats-server/bin/linux_x64
+Environment="LD_LIBRARY_PATH=/home/steam/steamcmd/linux64"
+ExecStart=/home/steam/ats-server/bin/linux_x64/amtrucks_server -homedir /home/steam/ats-data
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Euro Truck Simulator 2 Dedicated Server
+After=network.target
+
+[Service]
+Type=simple
+User=steam
+Group=steam
+WorkingDirectory=/home/steam/ets2-server/bin/linux_x64
+Environment="LD_LIBRARY_PATH=/home/steam/steamcmd/linux64"
+ExecStart=/home/steam/ets2-server/bin/linux_x64/eurotrucks2_server -homedir /home/steam/ets2-data
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
