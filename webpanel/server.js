@@ -294,6 +294,176 @@ app.post('/api/upload/:game', upload.single('file'), (req, res) => {
     }
 });
 
+// ============================================================
+// WORKSHOP MOD MANAGEMENT
+// ============================================================
+
+const STEAMCMD_BIN = path.join(STEAM_HOME, 'steamcmd', 'steamcmd.sh');
+const CONFIG_FILE  = path.join(STEAM_HOME, 'webpanel-config.json');
+
+const GAME_APP_IDS = { ets2: '227300', ats: '270880' };
+
+// Load or initialize persistent config (Steam credentials etc.)
+function loadConfig() {
+    if (fs.existsSync(CONFIG_FILE)) {
+        try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch(e) {}
+    }
+    return { steamUser: '', steamPass: '' };
+}
+function saveConfig(cfg) {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+// Where downloaded workshop mods land for each game
+function workshopDir(game) {
+    return path.join(STEAM_HOME, 'steamcmd', 'steamapps', 'workshop', 'content', GAME_APP_IDS[game]);
+}
+
+// List local mods for a game
+function listLocalMods(game) {
+    const dir = workshopDir(game);
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+        .filter(f => fs.statSync(path.join(dir, f)).isDirectory())
+        .map(id => {
+            const modDir = path.join(dir, id);
+            // Try to read manifest for name
+            let name = null;
+            const siiFiles = fs.readdirSync(modDir).filter(f => f.endsWith('.sii'));
+            if (siiFiles.length > 0) {
+                try {
+                    const content = fs.readFileSync(path.join(modDir, siiFiles[0]), 'utf8');
+                    const m = content.match(/display_name\s*:\s*"([^"]+)"/);
+                    if (m) name = m[1];
+                } catch(e) {}
+            }
+            const stat = fs.statSync(modDir);
+            return { id, name: name || `Mod #${id}`, downloadedAt: stat.mtime };
+        });
+}
+
+// GET /api/workshop/config  – return saved Steam credentials (masked)
+app.get('/api/workshop/config', (req, res) => {
+    const cfg = loadConfig();
+    res.json({ steamUser: cfg.steamUser, hasPass: !!cfg.steamPass });
+});
+
+// POST /api/workshop/config  – save Steam credentials
+app.post('/api/workshop/config', (req, res) => {
+    const { steamUser, steamPass } = req.body;
+    const cfg = loadConfig();
+    if (steamUser !== undefined) cfg.steamUser = steamUser;
+    if (steamPass !== undefined) cfg.steamPass = steamPass;
+    saveConfig(cfg);
+    res.json({ success: true });
+});
+
+// GET /api/workshop/search?game=ets2&q=searchterm&cursor=*
+// Uses Steam Web API (no key needed for basic queries)
+app.get('/api/workshop/search', async (req, res) => {
+    const { game, q = '', cursor = '*', num = '12' } = req.query;
+    const appid = GAME_APP_IDS[game];
+    if (!appid) return res.status(400).json({ error: 'Érvénytelen játék.' });
+
+    const params = new URLSearchParams({
+        query_type: '1',          // ranked by relevance
+        numperpage: num,
+        appid,
+        creator_appid: appid,
+        search_text: q,
+        return_metadata: '1',
+        return_previews: '1',
+        cursor,
+        key: 'STEAM_API_KEY_PLACEHOLDER'  // works without key for public items
+    });
+
+    const url = `https://api.steampowered.com/IPublishedFileService/QueryFiles/v1/?${params}`;
+    try {
+        const https = require('https');
+        const data = await new Promise((resolve, reject) => {
+            https.get(url, r => {
+                let body = '';
+                r.on('data', chunk => body += chunk);
+                r.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { reject(e); } });
+            }).on('error', reject);
+        });
+
+        const files = (data.response && data.response.publishedfiledetails) || [];
+        const items = files.map(f => ({
+            id:          f.publishedfileid,
+            title:       f.title || `Mod #${f.publishedfileid}`,
+            description: (f.short_description || f.description || '').substring(0, 120),
+            preview:     f.preview_url || '',
+            tags:        (f.tags || []).map(t => t.tag),
+            downloads:   f.subscriptions || 0,
+            updated:     f.time_updated ? new Date(f.time_updated * 1000).toLocaleDateString('hu-HU') : ''
+        }));
+        res.json({ items, next_cursor: data.response ? data.response.next_cursor : null });
+    } catch(e) {
+        res.status(500).json({ error: 'Workshop keresési hiba: ' + e.message });
+    }
+});
+
+// GET /api/workshop/mods/:game  – list locally downloaded mods
+app.get('/api/workshop/mods/:game', (req, res) => {
+    const { game } = req.params;
+    if (!GAME_APP_IDS[game]) return res.status(400).json({ error: 'Érvénytelen játék.' });
+    res.json({ mods: listLocalMods(game) });
+});
+
+// POST /api/workshop/download  – download a mod via SteamCMD
+// Body: { game: 'ets2', workshopId: '123456789' }
+app.post('/api/workshop/download', (req, res) => {
+    const { game, workshopId } = req.body;
+    const appid = GAME_APP_IDS[game];
+    if (!appid || !workshopId) return res.status(400).json({ error: 'Hiányzó paraméterek.' });
+    if (!fs.existsSync(STEAMCMD_BIN)) return res.status(500).json({ error: 'SteamCMD nem található. Futtasd az install.sh-t.' });
+
+    const cfg = loadConfig();
+    if (!cfg.steamUser || !cfg.steamPass) {
+        return res.status(400).json({ error: 'Nincs beállítva Steam fiók. Állítsd be a Workshop beállításokban.' });
+    }
+
+    // Build SteamCMD command
+    const cmd = [
+        STEAMCMD_BIN,
+        `+login "${cfg.steamUser}" "${cfg.steamPass}"`,
+        `+workshop_download_item ${appid} ${workshopId}`,
+        '+quit'
+    ].join(' ');
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.write(JSON.stringify({ status: 'started', message: 'Letöltés elindítva...' }) + '\n');
+
+    exec(cmd, { timeout: 120000 }, (err, stdout, stderr) => {
+        const output = stdout + stderr;
+        if (err || output.includes('ERROR') || output.includes('FAILED')) {
+            res.end(JSON.stringify({
+                status: 'error',
+                error: 'Letöltés sikertelen. Ellenőrizd a Steam bejelentkezési adatokat és hogy az account tulajdonosa a játéknak.',
+                output: output.substring(0, 500)
+            }));
+        } else {
+            res.end(JSON.stringify({ status: 'success', message: `Mod #${workshopId} sikeresen letöltve!` }));
+        }
+    });
+});
+
+// DELETE /api/workshop/mods/:game/:modId  – remove a locally downloaded mod
+app.delete('/api/workshop/mods/:game/:modId', (req, res) => {
+    const { game, modId } = req.params;
+    const appid = GAME_APP_IDS[game];
+    if (!appid) return res.status(400).json({ error: 'Érvénytelen játék.' });
+
+    const modPath = path.join(workshopDir(game), modId);
+    if (!fs.existsSync(modPath)) return res.status(404).json({ error: 'Mod nem található.' });
+
+    exec(`rm -rf "${modPath}"`, (err) => {
+        if (err) return res.status(500).json({ error: 'Törlési hiba: ' + err.message });
+        res.json({ success: true });
+    });
+});
+
 // Start Server
 app.listen(PORT, () => {
     console.log(`Server Manager Web Panel running on port ${PORT}`);

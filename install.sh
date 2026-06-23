@@ -355,7 +355,7 @@ setup_systemd_services() {
         log_info "Sudoers szabályok beállítása a '$INSTALL_USER' felhasználónak..."
         sudo mkdir -p /etc/sudoers.d
         sudo tee "/etc/sudoers.d/truck-server-$INSTALL_USER" << EOF
-$INSTALL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start ets2server.service, /usr/bin/systemctl stop ets2server.service, /usr/bin/systemctl restart ets2server.service, /usr/bin/systemctl status ets2server.service, /usr/bin/systemctl start atsserver.service, /usr/bin/systemctl stop atsserver.service, /usr/bin/systemctl restart atsserver.service, /usr/bin/systemctl status atsserver.service, /usr/bin/systemctl start truck-webpanel.service, /usr/bin/systemctl stop truck-webpanel.service, /usr/bin/systemctl restart truck-webpanel.service, /usr/bin/systemctl status truck-webpanel.service
+$INSTALL_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start ets2server.service, /usr/bin/systemctl stop ets2server.service, /usr/bin/systemctl restart ets2server.service, /usr/bin/systemctl status ets2server.service, /usr/bin/systemctl start atsserver.service, /usr/bin/systemctl stop atsserver.service, /usr/bin/systemctl restart atsserver.service, /usr/bin/systemctl status atsserver.service, /usr/bin/systemctl start truck-webpanel.service, /usr/bin/systemctl stop truck-webpanel.service, /usr/bin/systemctl restart truck-webpanel.service, /usr/bin/systemctl status truck-webpanel.service, /usr/bin/journalctl -u ets2server.service *, /usr/bin/journalctl -u atsserver.service *
 EOF
         sudo chmod 440 "/etc/sudoers.d/truck-server-$INSTALL_USER"
         log_success "Sudoers szabályok sikeresen beállítva."

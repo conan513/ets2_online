@@ -1,5 +1,6 @@
-# SteamCMD
+# SteamCMD and Steam SDK symlinks
 /steamcmd/
+/.steam/
 
 # Game Server Files (downloaded binaries and assets)
 /ets2-server/
@@ -16,9 +17,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Systemd / Temporary files
-/tmp/
-*.service
+# Temporary generated systemd files (generated to /tmp during install)
+# (The repo's own .service templates ARE tracked — do not exclude them here)
 *.log
 
 # OS specific files

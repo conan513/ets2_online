@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# truck-server: SCS Dedicated Server Management Utility
+# truck-server: SCS Dedicated Server Management Utility (Portable & Non-Root)
 # Designed for Arch Linux
 
 set -euo pipefail
@@ -15,17 +15,19 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Configurations
-STEAM_USER="steam"
+# Determine script directory dynamically to be fully portable
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Configurations resolved relative to SCRIPT_DIR
 ETS2_SERVICE="ets2server.service"
 ATS_SERVICE="atsserver.service"
 
-STEAMCMD_PATH="/home/steam/steamcmd/steamcmd.sh"
-ETS2_DIR="/home/steam/ets2-server"
-ATS_DIR="/home/steam/ats-server"
+STEAMCMD_PATH="$SCRIPT_DIR/steamcmd/steamcmd.sh"
+ETS2_DIR="$SCRIPT_DIR/ets2-server"
+ATS_DIR="$SCRIPT_DIR/ats-server"
 
-ETS2_DATA="/home/steam/ets2-data/Euro Truck Simulator 2"
-ATS_DATA="/home/steam/ats-data/American Truck Simulator"
+ETS2_DATA="$SCRIPT_DIR/ets2-data/Euro Truck Simulator 2"
+ATS_DATA="$SCRIPT_DIR/ats-data/American Truck Simulator"
 
 # Helper print functions
 log_info() {
@@ -65,14 +67,6 @@ show_help() {
     echo -e "  truck-server import ets2 /path/to/exported/files/"
 }
 
-# Check if a command is run as root or has sudo
-ensure_root_or_sudo() {
-    if [ "$EUID" -ne 0 ]; then
-        log_info "Kérlek add meg a jelszavad a rendszergazdai művelethez (sudo):"
-        exec sudo "$0" "$@"
-    fi
-}
-
 # Resolve game to systemd service name and directories
 resolve_game() {
     local game=$1
@@ -98,21 +92,19 @@ resolve_game() {
     esac
 }
 
-# Manage services (start/stop/restart)
+# Manage services (start/stop/restart) - uses sudo only for systemctl
 manage_service() {
     local action=$1
     local game=$2
     
     if [ "$game" == "all" ]; then
-        ensure_root_or_sudo "$action" "$game"
-        log_info "${action^}ing both servers..."
-        systemctl "$action" "$ETS2_SERVICE" "$ATS_SERVICE"
+        log_info "${action^}ing mindkét szerver..."
+        sudo systemctl "$action" "$ETS2_SERVICE" "$ATS_SERVICE"
         log_success "Mindkét szerver sikeresen: ${action}ed!"
     else
         resolve_game "$game"
-        ensure_root_or_sudo "$action" "$game"
-        log_info "${action^}ing $GAME_NAME server..."
-        systemctl "$action" "$SERVICE"
+        log_info "${action^}ing $GAME_NAME szerver..."
+        sudo systemctl "$action" "$SERVICE"
         log_success "$GAME_NAME szerver sikeresen: ${action}ed!"
     fi
 }
@@ -126,19 +118,18 @@ check_status() {
     systemctl status "$SERVICE" --no-pager || true
 }
 
-# View logs
+# View logs - uses sudo for journalctl specifically
 view_logs() {
     local game=$1
     resolve_game "$game"
     
     log_info "Megnyitás: $GAME_NAME logs (Kilépéshez nyomj Ctrl+C-t)..."
-    journalctl -u "$SERVICE" -n 50 -f
+    sudo journalctl -u "$SERVICE" -n 50 -f
 }
 
-# Run SteamCMD update
+# Run SteamCMD update (no sudo required)
 run_update() {
     local game=$1
-    ensure_root_or_sudo "update" "$game"
     
     if [ ! -f "$STEAMCMD_PATH" ]; then
         log_error "SteamCMD nem található a következő helyen: $STEAMCMD_PATH"
@@ -150,12 +141,9 @@ run_update() {
         resolve_game "$g"
         log_info "Frissítés indítása: $GAME_NAME ($INSTALL_DIR)..."
         
-        # Ensure directories exist and have correct permissions
         mkdir -p "$INSTALL_DIR"
-        chown -R "$STEAM_USER:$STEAM_USER" "$INSTALL_DIR"
         
-        # Run steamcmd as steam user
-        sudo -u "$STEAM_USER" "$STEAMCMD_PATH" \
+        "$STEAMCMD_PATH" \
             +force_install_dir "$INSTALL_DIR" \
             +login anonymous \
             +app_update "$APP_ID" validate \
@@ -172,7 +160,7 @@ run_update() {
     fi
 }
 
-# Edit configuration file
+# Edit configuration file (no sudo required)
 edit_config() {
     local game=$1
     resolve_game "$game"
@@ -182,11 +170,8 @@ edit_config() {
     if [ ! -f "$config_file" ]; then
         log_warn "A konfigurációs fájl nem található: $config_file"
         log_info "Létrehozunk egy alapértelmezett konfigurációs mappát..."
-        ensure_root_or_sudo "edit-config" "$game"
         mkdir -p "$DATA_DIR"
-        chown -R "$STEAM_USER:$STEAM_USER" "$(dirname "$DATA_DIR")"
         
-        # Run server briefly as steam user to generate configuration if possible
         log_info "Megpróbáljuk elindítani a szervert az alapértelmezett fájl legenerálásához..."
         
         local server_bin=""
@@ -197,10 +182,10 @@ edit_config() {
         fi
         
         if [ -f "$server_bin" ]; then
-            # Run in background and kill after 3 seconds
-            sudo -u "$STEAM_USER" LD_LIBRARY_PATH="/home/steam/steamcmd/linux64" "$server_bin" -homedir "$(dirname "$DATA_DIR")" > /dev/null 2>&1 &
+            # Run in background and kill after 4 seconds
+            LD_LIBRARY_PATH="$STEAMCMD_PATH/../linux64" "$server_bin" -homedir "$(dirname "$DATA_DIR")" > /dev/null 2>&1 &
             local pid=$!
-            sleep 3
+            sleep 4
             kill $pid || true
         else
             log_error "Nem található a szerver bináris: $server_bin. Először futtasd: 'truck-server update $game'"
@@ -214,14 +199,12 @@ edit_config() {
         exit 1
     fi
     
-    # Run text editor as steam user to edit the file
     local editor=${EDITOR:-nano}
     log_info "Megnyitás a következő szerkesztővel: $editor..."
-    ensure_root_or_sudo "edit-config" "$game"
-    sudo -u "$STEAM_USER" -E $editor "$config_file"
+    $editor "$config_file"
 }
 
-# Import server packages (server_packages.dat / server_packages.sii)
+# Import server packages (no sudo required)
 import_packages() {
     local game=$1
     local source_path=${2:-}
@@ -233,7 +216,6 @@ import_packages() {
     fi
     
     resolve_game "$game"
-    ensure_root_or_sudo "import" "$game" "$source_path"
     
     # Create destination data directory if not exists
     mkdir -p "$DATA_DIR"
@@ -262,8 +244,8 @@ import_packages() {
     elif [ -f "$source_path" ] && [[ "$source_path" == *.zip ]]; then
         log_info "Kicsomagolás a zip-ből: $source_path..."
         if ! command -v unzip &> /dev/null; then
-            log_info "Unzip telepítése..."
-            pacman -S --needed --noconfirm unzip
+            log_error "A kicsomagoláshoz az 'unzip' program szükséges. Kérlek telepítsd: sudo pacman -S unzip"
+            exit 1
         fi
         
         # Extract files directly to DATA_DIR
@@ -285,8 +267,6 @@ import_packages() {
         exit 1
     fi
     
-    # Fix permissions
-    chown -R "$STEAM_USER:$STEAM_USER" "$(dirname "$DATA_DIR")"
     log_success "Szerver csomagok sikeresen importálva ide: $DATA_DIR!"
 }
 

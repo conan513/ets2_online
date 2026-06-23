@@ -64,10 +64,14 @@
                     <i class="fa-solid fa-flag-usa"></i>
                     <span>American Truck Simulator</span>
                 </button>
+                <button class="nav-tab" data-game="workshop" data-special="workshop">
+                    <i class="fa-brands fa-steam"></i>
+                    <span>Workshop Modok</span>
+                </button>
             </nav>
 
-            <!-- Dashboard Content -->
-            <section class="content-area">
+            <!-- Dashboard Content (Server Panel) -->
+            <section class="content-area" id="server-panel">
                 <!-- Server Control Panel Card -->
                 <div class="card control-card">
                     <div class="card-header">
@@ -186,6 +190,87 @@
                         </div>
                     </div>
                 </div>
+            </section>
+
+            <!-- Workshop Panel -->
+            <section class="content-area" id="workshop-panel" style="display:none;">
+
+                <!-- Steam credentials card -->
+                <div class="card workshop-auth-card">
+                    <div class="card-header">
+                        <h2><i class="fa-brands fa-steam"></i> Steam Bejelentkezés</h2>
+                        <span class="helper-text" style="font-size:0.8rem;">Workshop letöltéshez szükséges (játék tulajdonos fiók)</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="ws-username">Steam felhasználónév</label>
+                                <input type="text" id="ws-username" placeholder="steam_felhasznalonev">
+                            </div>
+                            <div class="form-group">
+                                <label for="ws-password">Jelszó</label>
+                                <input type="password" id="ws-password" placeholder="••••••••">
+                            </div>
+                        </div>
+                        <div class="form-actions" style="gap:10px;">
+                            <button class="btn btn-primary" onclick="saveWorkshopCredentials()">
+                                <i class="fa-solid fa-key"></i> Mentés
+                            </button>
+                            <span id="ws-auth-status" class="helper-text"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Workshop game selector + search -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Workshop Böngésző</h2>
+                        <div style="display:flex;gap:10px;align-items:center;">
+                            <select id="ws-game-select" class="ws-select">
+                                <option value="ets2">ETS2</option>
+                                <option value="ats">ATS</option>
+                            </select>
+                            <input type="text" id="ws-search-input" placeholder="Keresés a Workshop-ban..." style="min-width:240px;" onkeydown="if(event.key==='Enter') searchWorkshop()">
+                            <button class="btn btn-primary" onclick="searchWorkshop()">
+                                <i class="fa-solid fa-magnifying-glass"></i> Keresés
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="ws-results" class="ws-grid">
+                            <div class="ws-placeholder">
+                                <i class="fa-brands fa-steam" style="font-size:2.5rem;color:var(--text-muted);"></i>
+                                <p>Írj be egy keresési kifejezést a modok kereséséhez.</p>
+                            </div>
+                        </div>
+                        <div id="ws-load-more" style="display:none;text-align:center;margin-top:15px;">
+                            <button class="btn btn-secondary" onclick="loadMoreWorkshop()">
+                                <i class="fa-solid fa-chevron-down"></i> Továbbiak betöltése
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Downloaded mods list -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>Letöltött Modok</h2>
+                        <button class="btn btn-secondary" onclick="refreshLocalMods()">
+                            <i class="fa-solid fa-arrows-rotate"></i> Frissítés
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="local-mods-list" class="local-mods-list">
+                            <p class="helper-text">Betöltés...</p>
+                        </div>
+                        <div class="alert-info" style="margin-top:15px;">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <strong>Fontos:</strong> A letöltött modokat a klienseden is aktiválni kell, majd az
+                            <code>export_server_packages</code> paranccsal frissíteni kell a szerver csomagokat!
+                        </div>
+                    </div>
+                </div>
+
             </section>
         </main>
     </div>
