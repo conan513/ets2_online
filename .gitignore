@@ -1,0 +1,31 @@
+# SteamCMD
+/steamcmd/
+
+# Game Server Files (downloaded binaries and assets)
+/ets2-server/
+/ats-server/
+
+# Game Server Configuration and Data (contains keys, settings, and logs)
+/ets2-data/
+/ats-data/
+
+# Node.js dependencies
+/webpanel/node_modules/
+/webpanel/.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Systemd / Temporary files
+/tmp/
+*.service
+*.log
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
